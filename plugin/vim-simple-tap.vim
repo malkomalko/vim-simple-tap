@@ -6,11 +6,58 @@ let g:simple_tap = 1
 augroup simpleTap
   au!
   au BufWritePost /tmp/tap_result.mytap call s:SetupTap()
+  au WinEnter * call s:SetLastPosition()
 augroup END
 
+command CloseTapWindow :call CloseTapWindow()
 command RunTapTests :call s:RunTapTests()
 
+fun! CloseTapWindow()
+  let tapwin = FindTapWindow()
+  if tapwin > 0
+    silent execute tapwin . 'wincmd w'
+    silent execute 'normal q'
+  endif
+endfun
+
+fun! FindTapWindow()
+  for w in range(1, winnr('$'))
+    if getwinvar(w,'&ft') ==# 'mytap'
+      return w
+    endif
+  endfor
+endfun
+
+fun! JumpToNextTapError()
+  if &ft !=# 'mytap'
+    silent execute 'wincmd p'
+    if (search('\(\/.*\):\(\d\+\):\(\d\+\)', 'n') <= 0)
+      silent execute 'wincmd p'
+      return 0
+    endif
+  endif
+  silent execute 'normal p'
+  call feedkeys("\<cr>")
+endfun
+
+fun! JumpToPrevTapError()
+  if &ft !=# 'mytap'
+    silent execute 'wincmd p'
+    if (search('\(\/.*\):\(\d\+\):\(\d\+\)', 'n') <= 0)
+      silent execute 'wincmd p'
+      return 0
+    endif
+  endif
+  silent execute 'normal n'
+  call feedkeys("\<cr>")
+endfun
+
 fun! s:RunTapTests()
+  if !exists('t:is_tap_error')
+    silent execute 'normal! mP'
+  endif
+  let t:tap_winnr_ran_from=winnr()
+  let t:tap_window_is_open=1
   let tapresult ="/tmp/tap_result.mytap"
   let old_win = winnr()
   silent! up
@@ -25,9 +72,9 @@ fun! s:RunTapTests()
   setl modifiable
   execute '1,$d'
   if exists("t:test_command")
-    silent! execute 'read !' . t:test_command
+    silent! execute 'read !REPORTER=tap ' . t:test_command
   else
-    silent! execute 'read !make test'
+    silent! execute 'read !REPORTER=tap make test'
   endif
   highlight TAP_PASS ctermfg=Green ctermbg=Black guifg=Green guibg=Black
   highlight TAP_FAIL ctermfg=Red ctermbg=Black guifg=Red guibg=Black
@@ -54,19 +101,35 @@ fun! s:RunTapTests()
   write!
   silent execute 'normal! zt'
   redraw!
+  if (search('\(\/.*\):\(\d\+\):\(\d\+\)', 'n') <= 0)
+    silent execute t:tap_winnr_ran_from.'wincmd w'
+  else
+    call search('\(\/.*\):\(\d\+\):\(\d\+\)')
+  endif
+endfun
+
+fun! s:SetLastPosition()
+  if &ft ==? 'mytap' && !exists('t:is_tap_error')
+    silent execute 'wincmd p'
+    silent execute 'normal! mP'
+    silent execute 'wincmd p'
+  endif
 endfun
 
 fun! s:SetupTap()
   let g:tap_win = bufnr('%')
   silent! call AdjustWindowHeight(5, 10)
-  nnoremap <buffer><silent>n :call s:TapNextError()<cr>
-  nnoremap <buffer><silent>p :call s:TapPrevError()<cr>
-  nnoremap <buffer><silent>q :q!<cr>:wincmd p<cr>
-  nnoremap <buffer><silent><cr> :call s:TapGotoError()<cr>
+  nnoremap <buffer><silent>n :call <SID>TapNextError()<cr>
+  nnoremap <buffer><silent>p :call <SID>TapPrevError()<cr>
+  nnoremap <buffer><silent>q :q!<cr>:wincmd p<cr>:unlet t:tap_window_is_open<cr>
+  nnoremap <buffer><silent><cr> :call <SID>TapGotoError()<cr>
+  nnoremap <buffer><silent><c-cr> :call <SID>TapGotoError()<cr>
 endfun
 
 fun! s:TapCloseTest()
-  tabc
+  unlet t:is_tap_error
+  nnoremap <buffer><silent><c-o> <c-o>
+  silent execute "normal! `P"
 endfun
 
 fun! s:TapGotoError()
@@ -80,7 +143,7 @@ fun! s:TapGotoError()
     if !buflisted(f)
       let not_listed = 1
     endif
-    tabnew
+    silent execute t:tap_winnr_ran_from.'wincmd w'
     exec "edit " . f
     exec ":" . l
     silent execute 'normal! ' . c . '|'
@@ -91,16 +154,25 @@ fun! s:TapGotoError()
     if not_listed
       setl nobuflisted
     endif
-    nnoremap <buffer><silent><c-o> :call s:TapCloseTest()<cr>
+    nnoremap <buffer><silent><c-o> :call <SID>TapCloseTest()<cr>
+    let t:is_tap_error = 1
   endif
 endfun
 
 fun! s:TapNextError()
-  call search('^not ok')
+  if (search('\(\/.*\):\(\d\+\):\(\d\+\)', 'n') > 0)
+    call search('\(\/.*\):\(\d\+\):\(\d\+\)')
+  else
+    call search('^not ok')
+  endif
   silent execute 'normal! zt'
 endfun
 
 fun! s:TapPrevError()
-  call search('^not ok', 'b')
+  if (search('\(\/.*\):\(\d\+\):\(\d\+\)', 'n') > 0)
+    call search('\(\/.*\):\(\d\+\):\(\d\+\)', 'b')
+  else
+    call search('^not ok', 'b')
+  endif
   silent execute 'normal! zt'
 endfun
