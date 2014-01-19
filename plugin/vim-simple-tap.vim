@@ -10,7 +10,7 @@ augroup simpleTap
 augroup END
 
 command CloseTapWindow :call CloseTapWindow()
-command RunTapTests :call s:RunTapTests()
+command RunTapTests :call s:RunTapTests(<args>)
 
 fun! CloseTapWindow()
   let tapwin = FindTapWindow()
@@ -52,7 +52,7 @@ fun! JumpToPrevTapError()
   call feedkeys("\<cr>")
 endfun
 
-fun! s:RunTapTests()
+fun! s:RunTapTests(...)
   if !exists('t:is_tap_error')
     silent execute 'normal! mP'
   endif
@@ -71,7 +71,9 @@ fun! s:RunTapTests()
   execute 'normal! \<C-W>b'
   setl modifiable
   execute '1,$d'
-  if exists("t:test_command")
+  if a:0 > 0
+    silent! execute 'read !REPORTER=tap ' . a:1
+  elseif exists("t:test_command")
     silent! execute 'read !REPORTER=tap ' . t:test_command
   else
     silent! execute 'read !REPORTER=tap make test'
